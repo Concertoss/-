@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>iNote & Todo Pro</title>
+    
+    <!-- 引入 Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入图标库 (Phosphor Icons) -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        /* iOS 风格基础设置 */
+        :root {
+            --bg-color: #F2F2F7;
+            --glass: rgba(250, 250, 250, 0.85);
+        }
+
+        body {
+            background-color: #e5e5e5;
+            font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        /* APP 容器 */
+        #app-container {
+            width: 100%;
+            max-width: 600px; 
+            height: 100vh;
+            background-color: var(--bg-color);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            margin: 0 auto;
+        }
+
+        /* PC端适配美化 */
+        @media (min-width: 640px) {
+            body { padding: 20px 0; align-items: center; }
+            #app-container {
+                height: 95vh;
+                max-height: 1000px;
+                border-radius: 40px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+                overflow: hidden;
+                border: 8px solid #fff;
+            }
+        }
+
+        /* 手机端适配 */
+        @media (max-width: 639px) {
+            #app-container { max-width: 100%; height: 100vh; border-radius: 0; border: none; }
+            body { padding: 0; background-color: var(--bg-color); }
+        }
+
+        /* 工具类 */
+        .glass-nav {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 0.5px solid rgba(0,0,0,0.1);
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* 动画 */
+        .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.3s ease-out, opacity 0.3s; }
+        .slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); opacity: 0; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .list-enter-active, .list-leave-active { transition: all 0.4s ease; }
+        .list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-20px); }
+    </style>
+</head>
+<body>
+
+<div id="app" class="w-full flex justify-center">
+    <div id="app-container">
+        
+        <!-- 顶部区域 -->
+        <header class="px-6 pt-12 pb-4 bg-transparent z-10 shrink-0">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ currentDateDisplay }}</span>
+                <div class="w-9 h-9 rounded-full bg-gray-200 overflow-hidden shadow-sm border border-white">
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="User" class="w-full h-full" />
+                </div>
+            </div>
+            <h1 class="text-3xl font-bold text-black tracking-tight">{{ currentTab === 'todo' ? '我的待办' : '随手记' }}</h1>
+        </header>
+
+        <!-- 内容滚动区域 -->
+        <main class="flex-1 overflow-y-auto no-scrollbar px-5 pb-28 scroll-smooth">
+            
+            <!-- 页面：待办事项 (TODO) -->
+            <div v-if="currentTab === 'todo'">
+                <!-- 进度概览 -->
+                <div class="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-3xl p-6 text-white shadow-lg shadow-blue-500/30 mb-6">
+                    <div class="flex justify-between items-end mb-2">
+                        <div>
+                            <p class="text-blue-100 text-sm font-medium">今日概览</p>
+                            <div class="flex items-baseline gap-1 mt-1">
+                                <span class="text-4xl font-bold">{{ activeTodos.length }}</span>
+                                <span class="text-base opacity-80">个待办</span>
+                            </div>
+                        </div>
+                        <div class="w-14 h-14 relative flex items-center justify-center">
+                            <svg class="transform -rotate-90 w-full h-full" viewBox="0 0 36 36">
+                                <path class="text-blue-400" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" stroke-opacity="0.4"/>
+                                <path class="text-white transition-all duration-1000 ease-out" :stroke-dasharray="completionPercentage + ', 100'" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+                            </svg>
+                            <span class="absolute text-[10px] font-bold">{{ completionPercentage }}%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 任务列表 -->
+                <div class="space-y-3">
+                    <transition-group name="list">
+                        <div v-for="todo in sortedTodos" :key="todo.id" 
+                             class="bg-white p-4 rounded-2xl shadow-sm border flex items-center justify-between group transition-all active:scale-[0.98]"
+                             :class="[
+                                 todo.completed ? 'opacity-60 grayscale border-gray-100' : 'border-white',
+                                 !todo.completed && todo.priority === 'high' ? 'bg-red-50 border-red-100' : ''
+                             ]">
+                            
+                            <div class="flex items-center gap-4 overflow-hidden w-full">
+                                <!-- 复选框：颜色根据优先级变化 -->
+                                <button @click="toggleTodo(todo)" 
+                                        class="w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shrink-0"
+                                        :class="getCheckboxColor(todo)">
+                                    <i v-if="todo.completed" class="ph-bold ph-check text-white text-xs"></i>
+                                </button>
+
+                                <div class="flex flex-col truncate flex-1">
+                                    <span class="text-base font-medium truncate transition-all" 
+                                          :class="todo.completed ? 'line-through text-gray-400' : 'text-gray-800'">
+                                        {{ todo.text }}
+                                    </span>
+                                    
+                                    <!-- 时间与标签行 -->
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <!-- 优先级标签 -->
+                                        <span v-if="!todo.completed && todo.priority !== 'normal'" 
+                                              class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide"
+                                              :class="todo.priority === 'high' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'">
+                                            {{ todo.priority === 'high' ? '紧急' : '重要' }}
+                                        </span>
+                                        
+                                        <!-- 时间显示 -->
+                                        <span v-if="todo.date || todo.time" class="text-xs text-gray-400 flex items-center gap-1">
+                                            <i class="ph-fill ph-calendar-blank"></i> 
+                                            {{ formatTodoDateTime(todo.date, todo.time) }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button @click="deleteTodo(todo.id)" class="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-red-500 transition-colors shrink-0">
+                                <i class="ph-bold ph-trash"></i>
+                            </button>
+                        </div>
+                    </transition-group>
+                </div>
+                
+                <!-- 空状态 -->
+                <div v-if="todos.length === 0" class="text-center mt-16 text-gray-400">
+                    <div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="ph-duotone ph-check-square-offset text-3xl text-gray-400"></i>
+                    </div>
+                    <p class="text-sm">暂无待办，计划一下？</p>
+                </div>
+            </div>
+
+            <!-- 页面：便签 (Notes) -->
+            <div v-else>
+                <div class="columns-2 gap-3 space-y-3">
+                    <div @click="openNoteModal" class="bg-gray-200/50 border-2 border-dashed border-gray-300 p-4 rounded-2xl flex flex-col items-center justify-center h-32 cursor-pointer text-gray-400 hover:bg-gray-200 hover:border-gray-400 transition-colors break-inside-avoid">
+                        <i class="ph-bold ph-plus text-2xl mb-1"></i>
+                        <span class="text-xs font-medium">新建便签</span>
+                    </div>
+
+                    <div v-for="note in notes" :key="note.id" 
+                         class="bg-white p-4 rounded-2xl shadow-sm break-inside-avoid mb-3 active:scale-95 transition-transform relative group"
+                         :style="{ backgroundColor: note.color || '#fff' }">
+                        <p class="text-sm font-medium text-gray-800 whitespace-pre-wrap leading-relaxed">{{ note.content }}</p>
+                        <div class="flex justify-between items-center mt-3 pt-2 border-t border-black/5">
+                            <span class="text-[10px] text-gray-500 opacity-70">{{ formatNoteDate(note.date) }}</span>
+                            <button @click="deleteNote(note.id)" class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-500">
+                                <i class="ph-bold ph-trash text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 悬浮添加按钮 -->
+        <button v-if="currentTab === 'todo'" 
+                @click="openTodoModal"
+                class="absolute bottom-24 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl shadow-blue-600/40 flex items-center justify-center text-2xl hover:bg-blue-700 active:scale-90 transition-all z-20">
+            <i class="ph-bold ph-plus"></i>
+        </button>
+
+        <!-- 底部导航栏 -->
+        <nav class="glass-nav absolute bottom-0 w-full h-20 pb-5 flex justify-around items-center z-30">
+            <button @click="currentTab = 'todo'" class="flex flex-col items-center gap-1 w-1/2 transition-all py-2"
+                    :class="currentTab === 'todo' ? 'text-blue-600' : 'text-gray-400'">
+                <i class="text-2xl" :class="currentTab === 'todo' ? 'ph-fill ph-check-circle' : 'ph-bold ph-check-circle'"></i>
+                <span class="text-[10px] font-medium">待办</span>
+            </button>
+            <button @click="currentTab = 'note'" class="flex flex-col items-center gap-1 w-1/2 transition-all py-2"
+                    :class="currentTab === 'note' ? 'text-blue-600' : 'text-gray-400'">
+                <i class="text-2xl" :class="currentTab === 'note' ? 'ph-fill ph-notebook' : 'ph-bold ph-notebook'"></i>
+                <span class="text-[10px] font-medium">便签</span>
+            </button>
+        </nav>
+
+        <!-- 遮罩层 -->
+        <transition name="fade">
+            <div v-if="showModal" @click="closeModal" class="absolute inset-0 bg-black/30 z-40 backdrop-blur-sm"></div>
+        </transition>
+
+        <!-- 待办弹窗：日期+时间+优先级 -->
+        <transition name="slide-up">
+            <div v-if="showModal && modalType === 'todo'" class="absolute bottom-0 w-full bg-white rounded-t-[30px] p-6 z-50 pb-10 shadow-2xl">
+                <div class="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+                
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold">新任务</h3>
+                    <!-- 优先级选择器 -->
+                    <div class="flex bg-gray-100 p-1 rounded-lg">
+                        <button v-for="p in priorities" :key="p.val"
+                                @click="newTodoPriority = p.val"
+                                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                                :class="newTodoPriority === p.val ? 'bg-white shadow text-black' : 'text-gray-400'">
+                            {{ p.label }}
+                        </button>
+                    </div>
+                </div>
+
+                <input v-model="newTodoText" type="text" placeholder="需要做什么？" class="w-full bg-gray-100 p-4 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all text-lg">
+                
+                <!-- 日期和时间选择行 -->
+                <div class="flex gap-3 mb-6">
+                    <div class="flex-1 bg-gray-100 px-4 py-3 rounded-xl flex items-center gap-2 text-gray-600">
+                        <i class="ph-bold ph-calendar"></i>
+                        <input v-model="newTodoDate" type="date" class="bg-transparent outline-none text-sm font-medium w-full">
+                    </div>
+                    <div class="flex-1 bg-gray-100 px-4 py-3 rounded-xl flex items-center gap-2 text-gray-600">
+                        <i class="ph-bold ph-clock"></i>
+                        <input v-model="newTodoTime" type="time" class="bg-transparent outline-none text-sm font-medium w-full">
+                    </div>
+                </div>
+
+                <button @click="addTodo" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-transform">
+                    确认添加
+                </button>
+            </div>
+        </transition>
+
+        <!-- 便签弹窗 (保持不变) -->
+        <transition name="slide-up">
+            <div v-if="showModal && modalType === 'note'" class="absolute bottom-0 w-full bg-white rounded-t-[30px] p-6 z-50 pb-8 shadow-2xl h-[65vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <button @click="closeModal" class="text-gray-500 px-2">取消</button>
+                    <span class="font-bold text-lg">新便签</span>
+                    <button @click="addNote" class="text-blue-600 font-bold px-2 bg-blue-50 rounded-lg py-1">完成</button>
+                </div>
+                <textarea v-model="newNoteContent" placeholder="记下当下的想法..." class="w-full flex-1 bg-gray-50 p-4 rounded-2xl resize-none outline-none text-base leading-relaxed focus:bg-white focus:ring-2 focus:ring-gray-100 transition-all"></textarea>
+                <div class="flex gap-4 mt-5 overflow-x-auto pb-2 px-1">
+                    <div v-for="color in noteColors" :key="color" 
+                         @click="selectedNoteColor = color"
+                         class="w-10 h-10 rounded-full cursor-pointer border-2 transition-all shadow-sm shrink-0"
+                         :class="selectedNoteColor === color ? 'border-blue-500 scale-110' : 'border-gray-100'"
+                         :style="{ backgroundColor: color }"></div>
+                </div>
+            </div>
+        </transition>
+
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted, watch } = Vue;
+
+    createApp({
+        setup() {
+            // --- 基础状态 ---
+            const currentTab = ref('todo');
+            const showModal = ref(false);
+            const modalType = ref(''); // 'todo' | 'note'
+            const currentDateDisplay = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
+
+            // --- Todo 数据 ---
+            const todos = ref([]);
+            const newTodoText = ref('');
+            const newTodoDate = ref('');
+            const newTodoTime = ref('');
+            const newTodoPriority = ref('normal');
+            
+            const priorities = [
+                { val: 'normal', label: '普通' },
+                { val: 'medium', label: '重要' },
+                { val: 'high', label: '紧急' }
+            ];
+
+            // --- Note 数据 ---
+            const notes = ref([]);
+            const newNoteContent = ref('');
+            const noteColors = ['#ffffff', '#ffedd5', '#fef3c7', '#dcfce7', '#dbeafe', '#f3e8ff', '#fee2e2'];
+            const selectedNoteColor = ref(noteColors[0]);
+
+            // --- 初始化与持久化 ---
+            onMounted(() => {
+                const savedTodos = localStorage.getItem('myApp_todos_v2');
+                const savedNotes = localStorage.getItem('myApp_notes_v2');
+                if (savedTodos) todos.value = JSON.parse(savedTodos);
+                if (savedNotes) notes.value = JSON.parse(savedNotes);
+            });
+
+            watch(todos, (newVal) => localStorage.setItem('myApp_todos_v2', JSON.stringify(newVal)), { deep: true });
+            watch(notes, (newVal) => localStorage.setItem('myApp_notes_v2', JSON.stringify(newVal)), { deep: true });
+
+            // --- 计算属性 (核心逻辑) ---
+            
+            // 排序逻辑：未完成在前 -> 优先级高在前(可选，这里主要按时间) -> 时间早在前 -> 创建时间早在前
+            const sortedTodos = computed(() => {
+                return [...todos.value].sort((a, b) => {
+                    // 1. 完成状态：未完成排前面
+                    if (a.completed !== b.completed) return a.completed - b.completed;
+                    
+                    // 2. 如果都未完成，按待办时间排序 (时间越早越靠前)
+                    // 构造完整时间戳进行比较
+                    const timeA = getTimestamp(a.date, a.time);
+                    const timeB = getTimestamp(b.date, b.time);
+                    
+                    if (timeA !== timeB) {
+                        return timeA - timeB; // 升序：越早的时间(数字越小)排在越上面
+                    }
+                    
+                    // 3. 如果时间一样，按优先级 (紧急 > 重要 > 普通)
+                    const pMap = { high: 3, medium: 2, normal: 1 };
+                    return pMap[b.priority] - pMap[a.priority];
+                });
+            });
+
+            const activeTodos = computed(() => todos.value.filter(t => !t.completed));
+            const completionPercentage = computed(() => {
+                if (todos.value.length === 0) return 0;
+                const completed = todos.value.filter(t => t.completed).length;
+                return Math.round((completed / todos.value.length) * 100);
+            });
+
+            // --- 方法 ---
+            
+            // 辅助：将日期+时间转为时间戳，没有日期的视为无穷远
+            const getTimestamp = (dateStr, timeStr) => {
+                if (!dateStr) return 9999999999999; // 无日期的排最后
+                const d = new Date(dateStr + (timeStr ? 'T' + timeStr : 'T23:59:00'));
+                return d.getTime();
+            };
+
+            // 获取今天的日期字符串 YYYY-MM-DD
+            const getTodayString = () => {
+                return new Date().toISOString().split('T')[0];
+            };
+
+            const openTodoModal = () => { 
+                modalType.value = 'todo'; 
+                showModal.value = true; 
+                newTodoText.value = ''; 
+                newTodoDate.value = getTodayString(); // 默认选中今天
+                newTodoTime.value = '';
+                newTodoPriority.value = 'normal';
+            };
+            
+            const openNoteModal = () => { 
+                modalType.value = 'note'; 
+                showModal.value = true; 
+                newNoteContent.value = ''; 
+                selectedNoteColor.value = noteColors[0]; 
+            };
+            
+            const closeModal = () => { showModal.value = false; };
+
+            const addTodo = () => {
+                if (!newTodoText.value.trim()) return;
+                todos.value.push({
+                    id: Date.now(),
+                    text: newTodoText.value,
+                    date: newTodoDate.value,
+                    time: newTodoTime.value,
+                    priority: newTodoPriority.value,
+                    completed: false
+                });
+                closeModal();
+            };
+
+            const toggleTodo = (todo) => { todo.completed = !todo.completed; };
+            const deleteTodo = (id) => { todos.value = todos.value.filter(t => t.id !== id); };
+
+            const addNote = () => {
+                if (!newNoteContent.value.trim()) return;
+                notes.value.unshift({
+                    id: Date.now(),
+                    content: newNoteContent.value,
+                    date: new Date(),
+                    color: selectedNoteColor.value
+                });
+                closeModal();
+            };
+            const deleteNote = (id) => { notes.value = notes.value.filter(n => n.id !== id); };
+
+            // 格式化显示
+            const formatTodoDateTime = (dateStr, timeStr) => {
+                if (!dateStr) return timeStr || '';
+                const date = new Date(dateStr);
+                const today = new Date();
+                const isToday = date.getDate() === today.getDate() && date.getMonth() === today.getMonth();
+                const isTomorrow = date.getDate() === today.getDate() + 1;
+                
+                let dDisplay = `${date.getMonth()+1}/${date.getDate()}`;
+                if (isToday) dDisplay = '今天';
+                if (isTomorrow) dDisplay = '明天';
+                
+                return `${dDisplay} ${timeStr || ''}`;
+            };
+
+            const formatNoteDate = (dateInput) => {
+                const date = new Date(dateInput);
+                return `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+            };
+
+            const getCheckboxColor = (todo) => {
+                if (todo.completed) return 'bg-gray-400 border-gray-400'; // 完成统一灰色
+                if (todo.priority === 'high') return 'border-red-500 text-red-500 bg-red-50';
+                if (todo.priority === 'medium') return 'border-orange-400 text-orange-400';
+                return 'border-gray-300'; // 普通
+            };
+
+            return {
+                currentTab, showModal, modalType, currentDateDisplay,
+                todos, newTodoText, newTodoDate, newTodoTime, newTodoPriority, priorities,
+                sortedTodos, activeTodos, completionPercentage,
+                notes, newNoteContent, noteColors, selectedNoteColor,
+                openTodoModal, openNoteModal, closeModal,
+                addTodo, toggleTodo, deleteTodo, addNote, deleteNote,
+                formatTodoDateTime, formatNoteDate, getCheckboxColor
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
